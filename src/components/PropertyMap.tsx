@@ -1,10 +1,15 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
-import { Property, getUpsideBgColor } from '@/types/property';
-import { Navigation, Locate, Plus, Minus, Layers, Search, RefreshCw } from 'lucide-react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import {
+  GoogleMap,
+  useJsApiLoader,
+  MarkerF,
+  InfoWindowF,
+  MarkerClustererF,
+} from '@react-google-maps/api';
+import { Property } from '@/types/property';
+import { Locate, Plus, Minus, Layers, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface PropertyMapProps {
@@ -17,7 +22,113 @@ interface PropertyMapProps {
   fullScreen?: boolean;
 }
 
-const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
+const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
+
+// Dark mode map style
+const darkMapStyle = [
+  { elementType: 'geometry', stylers: [{ color: '#1d1d1d' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#1d1d1d' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#8b8b8b' }] },
+  {
+    featureType: 'administrative.locality',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#d4d4d4' }],
+  },
+  {
+    featureType: 'poi',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#757575' }],
+  },
+  {
+    featureType: 'poi.park',
+    elementType: 'geometry',
+    stylers: [{ color: '#263c3f' }],
+  },
+  {
+    featureType: 'poi.park',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#6b9a76' }],
+  },
+  {
+    featureType: 'road',
+    elementType: 'geometry',
+    stylers: [{ color: '#2c2c2c' }],
+  },
+  {
+    featureType: 'road',
+    elementType: 'geometry.stroke',
+    stylers: [{ color: '#1d1d1d' }],
+  },
+  {
+    featureType: 'road',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#8a8a8a' }],
+  },
+  {
+    featureType: 'road.highway',
+    elementType: 'geometry',
+    stylers: [{ color: '#3c3c3c' }],
+  },
+  {
+    featureType: 'road.highway',
+    elementType: 'geometry.stroke',
+    stylers: [{ color: '#1f1f1f' }],
+  },
+  {
+    featureType: 'road.highway',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#b0b0b0' }],
+  },
+  {
+    featureType: 'transit',
+    elementType: 'geometry',
+    stylers: [{ color: '#2f2f2f' }],
+  },
+  {
+    featureType: 'transit.station',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#757575' }],
+  },
+  {
+    featureType: 'water',
+    elementType: 'geometry',
+    stylers: [{ color: '#0e1626' }],
+  },
+  {
+    featureType: 'water',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#515c6d' }],
+  },
+];
+
+// Satellite style (no custom styling)
+const satelliteMapTypeId = 'hybrid';
+
+// Create custom marker icon SVG
+function createMarkerSvg(score: number, isSelected: boolean): string {
+  const bgColor = score >= 75 ? '#22c55e' : score >= 50 ? '#eab308' : '#6b7280';
+  const size = isSelected ? 48 : 40;
+  const borderColor = isSelected ? '#3b82f6' : 'white';
+  const borderWidth = isSelected ? 4 : 3;
+  
+  return `data:image/svg+xml,${encodeURIComponent(`
+    <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="${size/2}" cy="${size/2}" r="${size/2 - borderWidth/2}" fill="${bgColor}" stroke="${borderColor}" stroke-width="${borderWidth}"/>
+      <text x="${size/2}" y="${size/2 + 5}" text-anchor="middle" fill="white" font-size="${isSelected ? 14 : 12}" font-weight="700" font-family="system-ui, sans-serif">${score}</text>
+    </svg>
+  `)}`;
+}
+
+// Cluster styles
+const clusterStyles = [
+  {
+    textColor: 'white',
+    textSize: 14,
+    width: 44,
+    height: 44,
+    className: 'cluster-marker',
+  },
+];
 
 export function PropertyMap({
   properties,
@@ -28,222 +139,103 @@ export function PropertyMap({
   searchCenter,
   fullScreen = false,
 }: PropertyMapProps) {
-  const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<mapboxgl.Map | null>(null);
-  const markers = useRef<mapboxgl.Marker[]>([]);
-  const searchMarker = useRef<mapboxgl.Marker | null>(null);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+  const mapRef = useRef<google.maps.Map | null>(null);
   const [mapStyle, setMapStyle] = useState<'dark' | 'satellite'>('dark');
   const [showSearchButton, setShowSearchButton] = useState(false);
   const [currentBounds, setCurrentBounds] = useState<{
     sw: { lat: number; lng: number };
     ne: { lat: number; lng: number };
   } | null>(null);
+  const [infoWindowProperty, setInfoWindowProperty] = useState<Property | null>(null);
   const lastSearchBounds = useRef<string | null>(null);
 
-  // Initialize map
-  useEffect(() => {
-    if (!mapContainer.current || map.current) return;
+  const { isLoaded, loadError } = useJsApiLoader({
+    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+    libraries: ['places'],
+  });
 
-    mapboxgl.accessToken = MAPBOX_TOKEN;
+  const mapOptions = useMemo<google.maps.MapOptions>(() => ({
+    disableDefaultUI: true,
+    zoomControl: false,
+    mapTypeControl: false,
+    streetViewControl: false,
+    fullscreenControl: false,
+    styles: mapStyle === 'dark' ? darkMapStyle : undefined,
+    mapTypeId: mapStyle === 'satellite' ? satelliteMapTypeId : 'roadmap',
+    gestureHandling: 'greedy',
+    minZoom: 3,
+    maxZoom: 20,
+  }), [mapStyle]);
 
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: mapStyle === 'dark' 
-        ? 'mapbox://styles/mapbox/dark-v11'
-        : 'mapbox://styles/mapbox/satellite-streets-v12',
-      center: [-98.5795, 39.8283],
-      zoom: 4,
-      attributionControl: false,
-    });
+  const defaultCenter = useMemo(() => ({ lat: 39.8283, lng: -98.5795 }), []);
 
-    map.current.on('load', () => {
-      setIsLoaded(true);
-    });
+  // Handle map load
+  const onMapLoad = useCallback((map: google.maps.Map) => {
+    mapRef.current = map;
+  }, []);
 
-    map.current.on('moveend', () => {
-      if (map.current) {
-        const bounds = map.current.getBounds();
-        if (bounds) {
-          const newBounds = {
-            sw: { lat: bounds.getSouthWest().lat, lng: bounds.getSouthWest().lng },
-            ne: { lat: bounds.getNorthEast().lat, lng: bounds.getNorthEast().lng },
-          };
-          setCurrentBounds(newBounds);
-          onBoundsChange?.(newBounds);
-          
-          // Show "Search this area" button if bounds changed significantly
-          const boundsKey = `${newBounds.sw.lat.toFixed(3)},${newBounds.sw.lng.toFixed(3)},${newBounds.ne.lat.toFixed(3)},${newBounds.ne.lng.toFixed(3)}`;
-          if (lastSearchBounds.current && lastSearchBounds.current !== boundsKey) {
-            setShowSearchButton(true);
-          }
-        }
+  // Handle bounds change
+  const onBoundsChanged = useCallback(() => {
+    if (!mapRef.current) return;
+    
+    const bounds = mapRef.current.getBounds();
+    if (bounds) {
+      const sw = bounds.getSouthWest();
+      const ne = bounds.getNorthEast();
+      const newBounds = {
+        sw: { lat: sw.lat(), lng: sw.lng() },
+        ne: { lat: ne.lat(), lng: ne.lng() },
+      };
+      setCurrentBounds(newBounds);
+      onBoundsChange?.(newBounds);
+
+      // Show "Search this area" button if bounds changed significantly
+      const boundsKey = `${newBounds.sw.lat.toFixed(3)},${newBounds.sw.lng.toFixed(3)},${newBounds.ne.lat.toFixed(3)},${newBounds.ne.lng.toFixed(3)}`;
+      if (lastSearchBounds.current && lastSearchBounds.current !== boundsKey) {
+        setShowSearchButton(true);
       }
-    });
-
-    return () => {
-      map.current?.remove();
-      map.current = null;
-    };
+    }
   }, [onBoundsChange]);
-
-  // Update markers when properties change
-  useEffect(() => {
-    if (!map.current || !isLoaded) return;
-
-    // Clear existing markers
-    markers.current.forEach((marker) => marker.remove());
-    markers.current = [];
-
-    // Group nearby properties for clustering (simple distance-based)
-    const clusters = clusterProperties(properties, map.current.getZoom());
-
-    clusters.forEach((cluster) => {
-      if (cluster.count > 1) {
-        // Cluster marker
-        const el = document.createElement('div');
-        el.className = 'cluster-marker';
-        el.innerHTML = `
-          <div style="
-            width: 44px;
-            height: 44px;
-            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-            border: 3px solid white;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 14px;
-            font-weight: 700;
-            color: white;
-            cursor: pointer;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-          ">
-            ${cluster.count}
-          </div>
-        `;
-
-        el.addEventListener('click', () => {
-          map.current?.flyTo({
-            center: [cluster.lng, cluster.lat],
-            zoom: map.current.getZoom() + 2,
-            duration: 800,
-          });
-        });
-
-        const marker = new mapboxgl.Marker(el)
-          .setLngLat([cluster.lng, cluster.lat])
-          .addTo(map.current!);
-        markers.current.push(marker);
-      } else {
-        // Single property marker
-        const property = cluster.properties[0];
-        const el = document.createElement('div');
-        const isSelected = selectedProperty?.id === property.id;
-        
-        const bgColor = property.upsideScore >= 75 
-          ? '#22c55e' 
-          : property.upsideScore >= 50 
-          ? '#eab308' 
-          : '#6b7280';
-
-        el.innerHTML = `
-          <div style="
-            width: ${isSelected ? '48px' : '40px'};
-            height: ${isSelected ? '48px' : '40px'};
-            background-color: ${bgColor};
-            border: ${isSelected ? '4px' : '3px'} solid ${isSelected ? '#3b82f6' : 'white'};
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: ${isSelected ? '14px' : '12px'};
-            font-weight: 700;
-            color: white;
-            cursor: pointer;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-            transition: all 0.2s;
-            transform: ${isSelected ? 'scale(1.1)' : 'scale(1)'};
-          ">
-            ${property.upsideScore}
-          </div>
-        `;
-
-        el.addEventListener('click', () => {
-          onPropertySelect?.(property);
-        });
-
-        const marker = new mapboxgl.Marker(el)
-          .setLngLat([property.longitude, property.latitude])
-          .addTo(map.current!);
-        markers.current.push(marker);
-      }
-    });
-  }, [properties, isLoaded, selectedProperty, onPropertySelect]);
 
   // Fly to selected property
   useEffect(() => {
-    if (!map.current || !selectedProperty) return;
+    if (!mapRef.current || !selectedProperty) return;
 
-    map.current.flyTo({
-      center: [selectedProperty.longitude, selectedProperty.latitude],
-      zoom: Math.max(map.current.getZoom(), 12),
-      duration: 1000,
+    mapRef.current.panTo({
+      lat: selectedProperty.latitude,
+      lng: selectedProperty.longitude,
     });
+    
+    const currentZoom = mapRef.current.getZoom() || 10;
+    if (currentZoom < 12) {
+      mapRef.current.setZoom(12);
+    }
   }, [selectedProperty]);
 
   // Handle search center changes
   useEffect(() => {
-    if (!map.current || !isLoaded) return;
+    if (!mapRef.current || !searchCenter) return;
 
-    // Remove existing search marker
-    if (searchMarker.current) {
-      searchMarker.current.remove();
-      searchMarker.current = null;
-    }
+    mapRef.current.panTo({ lat: searchCenter.lat, lng: searchCenter.lng });
+    mapRef.current.setZoom(11);
 
-    if (searchCenter) {
-      // Add search center marker
-      const el = document.createElement('div');
-      el.innerHTML = `
-        <div style="
-          width: 24px;
-          height: 24px;
-          background: #3b82f6;
-          border: 3px solid white;
-          border-radius: 50%;
-          box-shadow: 0 0 0 8px rgba(59, 130, 246, 0.3), 0 4px 12px rgba(0,0,0,0.4);
-        "></div>
-      `;
-
-      searchMarker.current = new mapboxgl.Marker(el)
-        .setLngLat([searchCenter.lng, searchCenter.lat])
-        .addTo(map.current);
-
-      // Fly to search location
-      map.current.flyTo({
-        center: [searchCenter.lng, searchCenter.lat],
-        zoom: 11,
-        duration: 1500,
-      });
-
-      // Update search bounds
-      setTimeout(() => {
-        if (map.current) {
-          const bounds = map.current.getBounds();
-          if (bounds) {
-            const newBounds = {
-              sw: { lat: bounds.getSouthWest().lat, lng: bounds.getSouthWest().lng },
-              ne: { lat: bounds.getNorthEast().lat, lng: bounds.getNorthEast().lng },
-            };
-            lastSearchBounds.current = `${newBounds.sw.lat.toFixed(3)},${newBounds.sw.lng.toFixed(3)},${newBounds.ne.lat.toFixed(3)},${newBounds.ne.lng.toFixed(3)}`;
-            setShowSearchButton(false);
-          }
+    // Update search bounds after animation
+    setTimeout(() => {
+      if (mapRef.current) {
+        const bounds = mapRef.current.getBounds();
+        if (bounds) {
+          const sw = bounds.getSouthWest();
+          const ne = bounds.getNorthEast();
+          const newBounds = {
+            sw: { lat: sw.lat(), lng: sw.lng() },
+            ne: { lat: ne.lat(), lng: ne.lng() },
+          };
+          lastSearchBounds.current = `${newBounds.sw.lat.toFixed(3)},${newBounds.sw.lng.toFixed(3)},${newBounds.ne.lat.toFixed(3)},${newBounds.ne.lng.toFixed(3)}`;
+          setShowSearchButton(false);
         }
-      }, 1600);
-    }
-  }, [searchCenter, isLoaded]);
+      }
+    }, 500);
+  }, [searchCenter]);
 
   // Handle "Search this area" click
   const handleSearchArea = useCallback(() => {
@@ -256,17 +248,13 @@ export function PropertyMap({
 
   // Geolocation
   const handleLocate = useCallback(() => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation || !mapRef.current) return;
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const { latitude, longitude } = position.coords;
-        setUserLocation([longitude, latitude]);
-        map.current?.flyTo({
-          center: [longitude, latitude],
-          zoom: 10,
-          duration: 1500,
-        });
+        mapRef.current?.panTo({ lat: latitude, lng: longitude });
+        mapRef.current?.setZoom(10);
       },
       (error) => {
         console.error('Geolocation error:', error);
@@ -276,23 +264,143 @@ export function PropertyMap({
 
   // Toggle map style
   const toggleStyle = useCallback(() => {
-    const newStyle = mapStyle === 'dark' ? 'satellite' : 'dark';
-    setMapStyle(newStyle);
-    map.current?.setStyle(
-      newStyle === 'dark'
-        ? 'mapbox://styles/mapbox/dark-v11'
-        : 'mapbox://styles/mapbox/satellite-streets-v12'
-    );
-  }, [mapStyle]);
+    setMapStyle(prev => prev === 'dark' ? 'satellite' : 'dark');
+  }, []);
 
   // Zoom controls
   const handleZoom = useCallback((delta: number) => {
-    map.current?.zoomTo(map.current.getZoom() + delta, { duration: 300 });
+    if (!mapRef.current) return;
+    const currentZoom = mapRef.current.getZoom() || 10;
+    mapRef.current.setZoom(currentZoom + delta);
   }, []);
+
+  // Handle marker click
+  const handleMarkerClick = useCallback((property: Property) => {
+    setInfoWindowProperty(property);
+    onPropertySelect?.(property);
+  }, [onPropertySelect]);
+
+  if (loadError) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-zinc-900 text-red-500">
+        Error loading Google Maps
+      </div>
+    );
+  }
+
+  if (!isLoaded) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-zinc-900 text-zinc-400">
+        Loading map...
+      </div>
+    );
+  }
 
   return (
     <div className={`relative w-full ${fullScreen ? 'h-full' : 'h-full'}`}>
-      <div ref={mapContainer} className="w-full h-full" />
+      <GoogleMap
+        mapContainerStyle={{ width: '100%', height: '100%' }}
+        center={defaultCenter}
+        zoom={4}
+        options={mapOptions}
+        onLoad={onMapLoad}
+        onIdle={onBoundsChanged}
+      >
+        {/* Property Markers with Clustering */}
+        <MarkerClustererF
+          averageCenter
+          enableRetinaIcons
+          gridSize={60}
+          styles={[
+            {
+              url: `data:image/svg+xml,${encodeURIComponent(`
+                <svg width="44" height="44" viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg">
+                  <defs>
+                    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" style="stop-color:#3b82f6"/>
+                      <stop offset="100%" style="stop-color:#8b5cf6"/>
+                    </linearGradient>
+                  </defs>
+                  <circle cx="22" cy="22" r="19" fill="url(#grad)" stroke="white" stroke-width="3"/>
+                </svg>
+              `)}`,
+              height: 44,
+              width: 44,
+              textColor: 'white',
+              textSize: 14,
+              fontWeight: 'bold',
+            },
+          ]}
+        >
+          {(clusterer) => (
+            <>
+              {properties.map((property) => {
+                const isSelected = selectedProperty?.id === property.id;
+                return (
+                  <MarkerF
+                    key={property.id}
+                    position={{ lat: property.latitude, lng: property.longitude }}
+                    clusterer={clusterer}
+                    icon={{
+                      url: createMarkerSvg(property.upsideScore, isSelected),
+                      scaledSize: new google.maps.Size(isSelected ? 48 : 40, isSelected ? 48 : 40),
+                      anchor: new google.maps.Point(isSelected ? 24 : 20, isSelected ? 24 : 20),
+                    }}
+                    onClick={() => handleMarkerClick(property)}
+                    zIndex={isSelected ? 1000 : property.upsideScore}
+                  />
+                );
+              })}
+            </>
+          )}
+        </MarkerClustererF>
+
+        {/* Search Center Marker */}
+        {searchCenter && (
+          <MarkerF
+            position={{ lat: searchCenter.lat, lng: searchCenter.lng }}
+            icon={{
+              url: `data:image/svg+xml,${encodeURIComponent(`
+                <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="12" cy="12" r="8" fill="#3b82f6" stroke="white" stroke-width="3"/>
+                  <circle cx="12" cy="12" r="12" fill="rgba(59, 130, 246, 0.3)" stroke="none"/>
+                </svg>
+              `)}`,
+              scaledSize: new google.maps.Size(24, 24),
+              anchor: new google.maps.Point(12, 12),
+            }}
+            zIndex={500}
+          />
+        )}
+
+        {/* Info Window for selected property */}
+        {infoWindowProperty && (
+          <InfoWindowF
+            position={{ lat: infoWindowProperty.latitude, lng: infoWindowProperty.longitude }}
+            onCloseClick={() => setInfoWindowProperty(null)}
+            options={{ pixelOffset: new google.maps.Size(0, -20) }}
+          >
+            <div className="p-2 min-w-[200px]">
+              <h3 className="font-semibold text-zinc-900 text-sm">{infoWindowProperty.address}</h3>
+              <p className="text-xs text-zinc-600 mt-1">
+                {infoWindowProperty.city}, {infoWindowProperty.state}
+              </p>
+              <div className="flex items-center gap-2 mt-2">
+                <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                  infoWindowProperty.upsideScore >= 75 ? 'bg-green-100 text-green-800' :
+                  infoWindowProperty.upsideScore >= 50 ? 'bg-yellow-100 text-yellow-800' :
+                  'bg-gray-100 text-gray-800'
+                }`}>
+                  Score: {infoWindowProperty.upsideScore}
+                </span>
+                <span className="text-xs text-zinc-600">
+                  ${infoWindowProperty.price?.toLocaleString() || 'N/A'}
+                </span>
+              </div>
+            </div>
+          </InfoWindowF>
+        )}
+      </GoogleMap>
 
       {/* Search This Area Button */}
       <AnimatePresence>
@@ -343,63 +451,6 @@ export function PropertyMap({
           <Layers size={20} />
         </button>
       </div>
-
-      {/* User location marker */}
-      {userLocation && (
-        <div
-          className="absolute w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-lg animate-pulse"
-          style={{
-            // This would need proper projection, simplified for now
-          }}
-        />
-      )}
     </div>
   );
-}
-
-// Simple clustering function
-interface Cluster {
-  lat: number;
-  lng: number;
-  count: number;
-  properties: Property[];
-}
-
-function clusterProperties(properties: Property[], zoom: number): Cluster[] {
-  if (zoom >= 10) {
-    // Don't cluster at high zoom
-    return properties.map((p) => ({
-      lat: p.latitude,
-      lng: p.longitude,
-      count: 1,
-      properties: [p],
-    }));
-  }
-
-  const gridSize = zoom < 5 ? 5 : zoom < 8 ? 2 : 1;
-  const clusters: Map<string, Cluster> = new Map();
-
-  properties.forEach((property) => {
-    const gridLat = Math.floor(property.latitude / gridSize) * gridSize;
-    const gridLng = Math.floor(property.longitude / gridSize) * gridSize;
-    const key = `${gridLat},${gridLng}`;
-
-    if (clusters.has(key)) {
-      const cluster = clusters.get(key)!;
-      cluster.properties.push(property);
-      cluster.count++;
-      // Update center to average
-      cluster.lat = cluster.properties.reduce((sum, p) => sum + p.latitude, 0) / cluster.count;
-      cluster.lng = cluster.properties.reduce((sum, p) => sum + p.longitude, 0) / cluster.count;
-    } else {
-      clusters.set(key, {
-        lat: property.latitude,
-        lng: property.longitude,
-        count: 1,
-        properties: [property],
-      });
-    }
-  });
-
-  return Array.from(clusters.values());
 }

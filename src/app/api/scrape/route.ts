@@ -9,20 +9,20 @@ function generateJobId(): string {
   return `job_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-// Geocode location name to coordinates
+// Geocode location name to coordinates using Google Geocoding API
 async function geocodeLocation(location: string): Promise<{ lat: number; lng: number } | null> {
-  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-  if (!mapboxToken) return null;
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_PLACES_API_KEY;
+  if (!apiKey) return null;
 
   try {
     const response = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
+      `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
         location
-      )}.json?access_token=${mapboxToken}&country=us&limit=1`
+      )}&key=${apiKey}`
     );
     const data = await response.json();
-    if (data.features && data.features.length > 0) {
-      const [lng, lat] = data.features[0].center;
+    if (data.status === 'OK' && data.results && data.results.length > 0) {
+      const { lat, lng } = data.results[0].geometry.location;
       return { lat, lng };
     }
   } catch (error) {

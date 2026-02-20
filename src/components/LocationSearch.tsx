@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, MapPin, X, Crosshair, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useJsApiLoader } from '@react-google-maps/api';
 
 interface LocationSearchProps {
   onLocationSelect: (location: {
@@ -14,14 +15,16 @@ interface LocationSearchProps {
   placeholder?: string;
 }
 
-interface MapboxFeature {
-  id: string;
-  place_name: string;
-  center: [number, number];
-  place_type: string[];
+interface PlacePrediction {
+  place_id: string;
+  description: string;
+  structured_formatting: {
+    main_text: string;
+    secondary_text: string;
+  };
 }
 
-const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
+const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
 export function LocationSearch({
   onLocationSelect,
@@ -29,34 +32,60 @@ export function LocationSearch({
   placeholder = 'Search location...',
 }: LocationSearchProps) {
   const [query, setQuery] = useState('');
-  const [suggestions, setSuggestions] = useState<MapboxFeature[]>([]);
+  const [suggestions, setSuggestions] = useState<PlacePrediction[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const [locatingUser, setLocatingUser] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  const autocompleteService = useRef<google.maps.places.AutocompleteService | null>(null);
+  const placesService = useRef<google.maps.places.PlacesService | null>(null);
+  const geocoder = useRef<google.maps.Geocoder | null>(null);
 
-  // Geocode search query
+  const { isLoaded } = useJsApiLoader({
+    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+    libraries: ['places'],
+  });
+
+  // Initialize services when Google Maps is loaded
+  useEffect(() => {
+    if (isLoaded && !autocompleteService.current) {
+      autocompleteService.current = new google.maps.places.AutocompleteService();
+      // Create a dummy div for PlacesService (required)
+      const dummyDiv = document.createElement('div');
+      placesService.current = new google.maps.places.PlacesService(dummyDiv);
+      geocoder.current = new google.maps.Geocoder();
+    }
+  }, [isLoaded]);
+
+  // Search for place predictions
   const searchLocations = useCallback(async (searchQuery: string) => {
-    if (!searchQuery.trim() || searchQuery.length < 2) {
+    if (!searchQuery.trim() || searchQuery.length < 2 || !autocompleteService.current) {
       setSuggestions([]);
       return;
     }
 
     setIsLoading(true);
     try {
-      const response = await fetch(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
-          searchQuery
-        )}.json?access_token=${MAPBOX_TOKEN}&country=us&types=place,locality,neighborhood,address,poi&limit=5`
+      autocompleteService.current.getPlacePredictions(
+        {
+          input: searchQuery,
+          componentRestrictions: { country: 'us' },
+          types: ['geocode', 'establishment'],
+        },
+        (predictions, status) => {
+          if (status === google.maps.places.PlacesServiceStatus.OK && predictions) {
+            setSuggestions(predictions.slice(0, 5) as PlacePrediction[]);
+          } else {
+            setSuggestions([]);
+          }
+          setIsLoading(false);
+        }
       );
-      const data = await response.json();
-      setSuggestions(data.features || []);
     } catch (error) {
-      console.error('Geocoding error:', error);
+      console.error('Autocomplete error:', error);
       setSuggestions([]);
-    } finally {
       setIsLoading(false);
     }
   }, []);
@@ -79,16 +108,30 @@ export function LocationSearch({
   }, [query, searchLocations]);
 
   // Handle suggestion selection
-  const handleSelect = (feature: MapboxFeature) => {
-    setQuery(feature.place_name);
+  const handleSelect = useCallback((prediction: PlacePrediction) => {
+    if (!placesService.current) return;
+
+    setQuery(prediction.description);
     setSuggestions([]);
     setIsFocused(false);
-    onLocationSelect({
-      name: feature.place_name,
-      lat: feature.center[1],
-      lng: feature.center[0],
-    });
-  };
+
+    // Get place details to get lat/lng
+    placesService.current.getDetails(
+      {
+        placeId: prediction.place_id,
+        fields: ['geometry', 'name', 'formatted_address'],
+      },
+      (place, status) => {
+        if (status === google.maps.places.PlacesServiceStatus.OK && place?.geometry?.location) {
+          onLocationSelect({
+            name: prediction.description,
+            lat: place.geometry.location.lat(),
+            lng: place.geometry.location.lng(),
+          });
+        }
+      }
+    );
+  }, [onLocationSelect]);
 
   // Handle clear
   const handleClear = () => {
@@ -111,28 +154,36 @@ export function LocationSearch({
         const { latitude, longitude } = position.coords;
 
         // Reverse geocode to get place name
-        try {
-          const response = await fetch(
-            `https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${MAPBOX_TOKEN}&types=place,locality&limit=1`
-          );
-          const data = await response.json();
-          const placeName =
-            data.features?.[0]?.place_name || 'Current Location';
+        if (geocoder.current) {
+          geocoder.current.geocode(
+            { location: { lat: latitude, lng: longitude } },
+            (results, status) => {
+              let placeName = 'Current Location';
+              if (status === google.maps.GeocoderStatus.OK && results?.[0]) {
+                // Try to find a locality or neighborhood result
+                const addressResult = results.find(r => 
+                  r.types.includes('locality') || 
+                  r.types.includes('sublocality') ||
+                  r.types.includes('neighborhood')
+                ) || results[0];
+                placeName = addressResult.formatted_address;
+              }
 
-          setQuery(placeName);
-          onLocationSelect({
-            name: placeName,
-            lat: latitude,
-            lng: longitude,
-          });
-        } catch (error) {
-          console.error('Reverse geocoding error:', error);
+              setQuery(placeName);
+              onLocationSelect({
+                name: placeName,
+                lat: latitude,
+                lng: longitude,
+              });
+              setLocatingUser(false);
+            }
+          );
+        } else {
           onLocationSelect({
             name: 'Current Location',
             lat: latitude,
             lng: longitude,
           });
-        } finally {
           setLocatingUser(false);
         }
       },
@@ -214,15 +265,15 @@ export function LocationSearch({
             exit={{ opacity: 0, y: -10 }}
             className="absolute top-full left-0 right-0 mt-2 bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden shadow-xl z-50"
           >
-            {suggestions.map((feature) => (
+            {suggestions.map((prediction) => (
               <button
-                key={feature.id}
-                onClick={() => handleSelect(feature)}
+                key={prediction.place_id}
+                onClick={() => handleSelect(prediction)}
                 className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-zinc-800 transition-colors"
               >
                 <MapPin size={16} className="text-zinc-500 flex-shrink-0" />
                 <span className="text-sm text-white truncate">
-                  {feature.place_name}
+                  {prediction.description}
                 </span>
               </button>
             ))}

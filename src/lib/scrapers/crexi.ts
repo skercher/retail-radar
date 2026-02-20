@@ -11,20 +11,20 @@ interface CREXiListing {
   imageUrl: string | null;
 }
 
-// Geocode address using Mapbox
+// Geocode address using Google Geocoding API
 async function geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
-  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-  if (!mapboxToken) return null;
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_PLACES_API_KEY;
+  if (!apiKey) return null;
 
   try {
     const response = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
+      `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
         address
-      )}.json?access_token=${mapboxToken}&country=us&limit=1`
+      )}&key=${apiKey}`
     );
     const data = await response.json();
-    if (data.features && data.features.length > 0) {
-      const [lng, lat] = data.features[0].center;
+    if (data.status === 'OK' && data.results && data.results.length > 0) {
+      const { lat, lng } = data.results[0].geometry.location;
       return { lat, lng };
     }
   } catch (error) {

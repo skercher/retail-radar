@@ -107,33 +107,29 @@ input[type="number"] {
   -moz-appearance: textfield;
 }
 
-/* Mapbox overrides */
-.mapboxgl-ctrl-logo,
-.mapboxgl-ctrl-attrib {
-  display: none !important;
-}
-
-.mapboxgl-popup {
-  z-index: 40;
-}
-
-.mapboxgl-popup-content {
+/* Google Maps overrides */
+.gm-style-iw {
   background: #18181b !important;
   border: 1px solid #3f3f46 !important;
   border-radius: 12px !important;
-  padding: 12px !important;
+  padding: 0 !important;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
 }
 
-.mapboxgl-popup-tip {
-  border-top-color: #18181b !important;
+.gm-style-iw-d {
+  overflow: visible !important;
 }
 
-.mapboxgl-popup-close-button {
-  color: #a1a1aa !important;
-  font-size: 18px !important;
-  right: 8px !important;
-  top: 8px !important;
+.gm-style-iw-tc {
+  filter: none !important;
+}
+
+.gm-style-iw-tc::after {
+  background: #18181b !important;
+}
+
+.gm-ui-hover-effect {
+  filter: invert(1) !important;
 }
 
 /* Animation utilities */
