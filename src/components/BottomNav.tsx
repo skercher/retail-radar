@@ -13,7 +13,7 @@ export function BottomNav({ activeView, onViewChange, savedCount = 0 }: BottomNa
   const navItems = [
     { id: 'list' as ViewMode, icon: List, label: 'List' },
     { id: 'map' as ViewMode, icon: Map, label: 'Map' },
-    { id: 'split' as ViewMode, icon: Heart, label: 'Saved', badge: savedCount },
+    { id: 'saved' as ViewMode, icon: Heart, label: 'Saved', badge: savedCount },
   ];
 
   return (

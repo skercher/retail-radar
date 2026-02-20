@@ -53,7 +53,7 @@ export interface MapBounds {
   ne: { lat: number; lng: number };
 }
 
-export type ViewMode = 'list' | 'map' | 'split';
+export type ViewMode = 'list' | 'map' | 'split' | 'saved';
 export type SortOption = 'upsideScore' | 'price' | 'capRate' | 'vacancy';
 
 export function calculateUpsideScore(property: Partial<Property>): number {
