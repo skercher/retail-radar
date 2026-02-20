@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { query, queryOne, initSchema } from '@/lib/db';
+import { query, queryOne, initSchema, calculateDistance } from '@/lib/db';
 
 export interface PropertyRow {
   id: number;
@@ -22,12 +22,24 @@ export interface PropertyRow {
   tenant_count: number | null;
   listing_url: string | null;
   image_url: string | null;
+  images: string[] | null;
+  google_place_id: string | null;
+  google_rating: number | null;
   source: string | null;
   scraped_at: string;
   created_at: string;
+  distance?: number;
 }
 
-function transformProperty(row: PropertyRow) {
+function transformProperty(row: PropertyRow, searchLat?: number, searchLng?: number) {
+  const lat = row.lat ? Number(row.lat) : 0;
+  const lng = row.lng ? Number(row.lng) : 0;
+  
+  let distance: number | null = null;
+  if (searchLat && searchLng && lat && lng) {
+    distance = calculateDistance(searchLat, searchLng, lat, lng);
+  }
+  
   return {
     id: String(row.id),
     externalId: row.external_id,
@@ -36,8 +48,8 @@ function transformProperty(row: PropertyRow) {
     city: row.city || '',
     state: row.state || '',
     zip: row.zip || '',
-    latitude: row.lat ? Number(row.lat) : 0,
-    longitude: row.lng ? Number(row.lng) : 0,
+    latitude: lat,
+    longitude: lng,
     price: row.price ? Number(row.price) : 0,
     sqft: row.sqft || 0,
     pricePerSqft: row.price && row.sqft ? Number(row.price) / row.sqft : 0,
@@ -50,8 +62,12 @@ function transformProperty(row: PropertyRow) {
     tenantCount: row.tenant_count || 0,
     listingUrl: row.listing_url,
     imageUrl: row.image_url,
+    images: row.images,
+    googlePlaceId: row.google_place_id,
+    googleRating: row.google_rating ? Number(row.google_rating) : null,
     source: row.source || 'manual',
     lastUpdated: row.scraped_at,
+    distance,
   };
 }
 
@@ -72,10 +88,19 @@ export async function GET(request: NextRequest) {
     const sortBy = searchParams.get('sortBy') || 'upside_score';
     const limit = searchParams.get('limit') || '100';
     const bounds = searchParams.get('bounds'); // sw_lat,sw_lng,ne_lat,ne_lng
+    
+    // Location-based search
+    const lat = searchParams.get('lat');
+    const lng = searchParams.get('lng');
+    const radius = searchParams.get('radius'); // in miles
 
     let sql = 'SELECT * FROM properties WHERE 1=1';
     const params: (string | number)[] = [];
     let paramIndex = 1;
+
+    // Parse search coordinates for distance calculation
+    const searchLat = lat ? Number(lat) : undefined;
+    const searchLng = lng ? Number(lng) : undefined;
 
     if (city) {
       sql += ` AND LOWER(city) LIKE LOWER($${paramIndex})`;
@@ -133,21 +158,52 @@ export async function GET(request: NextRequest) {
       paramIndex += 4;
     }
 
+    // Location-based radius filter using Haversine approximation
+    if (searchLat && searchLng && radius) {
+      const radiusMiles = Number(radius);
+      // Approximate degrees per mile for filtering (rough bounding box)
+      const latDelta = radiusMiles / 69; // ~69 miles per degree latitude
+      const lngDelta = radiusMiles / (69 * Math.cos((searchLat * Math.PI) / 180));
+      
+      sql += ` AND lat BETWEEN $${paramIndex} AND $${paramIndex + 1}`;
+      sql += ` AND lng BETWEEN $${paramIndex + 2} AND $${paramIndex + 3}`;
+      params.push(searchLat - latDelta, searchLat + latDelta, searchLng - lngDelta, searchLng + lngDelta);
+      paramIndex += 4;
+    }
+
     // Sorting
     const sortMap: Record<string, string> = {
       upside_score: 'upside_score DESC NULLS LAST',
       price: 'price ASC NULLS LAST',
       cap_rate: 'cap_rate DESC NULLS LAST',
       vacancy: 'vacancy_rate DESC NULLS LAST',
+      distance: 'upside_score DESC NULLS LAST', // Will sort by distance client-side
     };
     sql += ` ORDER BY ${sortMap[sortBy] || sortMap.upside_score}`;
     sql += ` LIMIT $${paramIndex}`;
     params.push(Number(limit));
 
     const rows = await query<PropertyRow>(sql, params);
-    const properties = rows.map(transformProperty);
+    let properties = rows.map((row) => transformProperty(row, searchLat, searchLng));
 
-    return NextResponse.json({ properties, count: properties.length });
+    // If searching by location with radius, filter by actual distance
+    if (searchLat && searchLng && radius) {
+      const radiusMiles = Number(radius);
+      properties = properties.filter(
+        (p) => p.distance !== null && p.distance <= radiusMiles
+      );
+    }
+
+    // Sort by distance if requested
+    if (sortBy === 'distance' && searchLat && searchLng) {
+      properties.sort((a, b) => (a.distance || Infinity) - (b.distance || Infinity));
+    }
+
+    return NextResponse.json({ 
+      properties, 
+      count: properties.length,
+      searchLocation: searchLat && searchLng ? { lat: searchLat, lng: searchLng } : null,
+    });
   } catch (error) {
     console.error('Error fetching properties:', error);
     return NextResponse.json(

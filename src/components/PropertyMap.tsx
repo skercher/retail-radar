@@ -4,13 +4,16 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { Property, getUpsideBgColor } from '@/types/property';
-import { Navigation, Locate, Plus, Minus, Layers } from 'lucide-react';
+import { Navigation, Locate, Plus, Minus, Layers, Search, RefreshCw } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface PropertyMapProps {
   properties: Property[];
   selectedProperty?: Property | null;
   onPropertySelect?: (property: Property) => void;
   onBoundsChange?: (bounds: { sw: { lat: number; lng: number }; ne: { lat: number; lng: number } }) => void;
+  onSearchArea?: (bounds: { sw: { lat: number; lng: number }; ne: { lat: number; lng: number } }) => void;
+  searchCenter?: { lat: number; lng: number } | null;
   fullScreen?: boolean;
 }
 
@@ -21,14 +24,23 @@ export function PropertyMap({
   selectedProperty,
   onPropertySelect,
   onBoundsChange,
+  onSearchArea,
+  searchCenter,
   fullScreen = false,
 }: PropertyMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const markers = useRef<mapboxgl.Marker[]>([]);
+  const searchMarker = useRef<mapboxgl.Marker | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const [mapStyle, setMapStyle] = useState<'dark' | 'satellite'>('dark');
+  const [showSearchButton, setShowSearchButton] = useState(false);
+  const [currentBounds, setCurrentBounds] = useState<{
+    sw: { lat: number; lng: number };
+    ne: { lat: number; lng: number };
+  } | null>(null);
+  const lastSearchBounds = useRef<string | null>(null);
 
   // Initialize map
   useEffect(() => {
@@ -51,13 +63,21 @@ export function PropertyMap({
     });
 
     map.current.on('moveend', () => {
-      if (map.current && onBoundsChange) {
+      if (map.current) {
         const bounds = map.current.getBounds();
         if (bounds) {
-          onBoundsChange({
+          const newBounds = {
             sw: { lat: bounds.getSouthWest().lat, lng: bounds.getSouthWest().lng },
             ne: { lat: bounds.getNorthEast().lat, lng: bounds.getNorthEast().lng },
-          });
+          };
+          setCurrentBounds(newBounds);
+          onBoundsChange?.(newBounds);
+          
+          // Show "Search this area" button if bounds changed significantly
+          const boundsKey = `${newBounds.sw.lat.toFixed(3)},${newBounds.sw.lng.toFixed(3)},${newBounds.ne.lat.toFixed(3)},${newBounds.ne.lng.toFixed(3)}`;
+          if (lastSearchBounds.current && lastSearchBounds.current !== boundsKey) {
+            setShowSearchButton(true);
+          }
         }
       }
     });
@@ -66,7 +86,7 @@ export function PropertyMap({
       map.current?.remove();
       map.current = null;
     };
-  }, []);
+  }, [onBoundsChange]);
 
   // Update markers when properties change
   useEffect(() => {
@@ -173,6 +193,67 @@ export function PropertyMap({
     });
   }, [selectedProperty]);
 
+  // Handle search center changes
+  useEffect(() => {
+    if (!map.current || !isLoaded) return;
+
+    // Remove existing search marker
+    if (searchMarker.current) {
+      searchMarker.current.remove();
+      searchMarker.current = null;
+    }
+
+    if (searchCenter) {
+      // Add search center marker
+      const el = document.createElement('div');
+      el.innerHTML = `
+        <div style="
+          width: 24px;
+          height: 24px;
+          background: #3b82f6;
+          border: 3px solid white;
+          border-radius: 50%;
+          box-shadow: 0 0 0 8px rgba(59, 130, 246, 0.3), 0 4px 12px rgba(0,0,0,0.4);
+        "></div>
+      `;
+
+      searchMarker.current = new mapboxgl.Marker(el)
+        .setLngLat([searchCenter.lng, searchCenter.lat])
+        .addTo(map.current);
+
+      // Fly to search location
+      map.current.flyTo({
+        center: [searchCenter.lng, searchCenter.lat],
+        zoom: 11,
+        duration: 1500,
+      });
+
+      // Update search bounds
+      setTimeout(() => {
+        if (map.current) {
+          const bounds = map.current.getBounds();
+          if (bounds) {
+            const newBounds = {
+              sw: { lat: bounds.getSouthWest().lat, lng: bounds.getSouthWest().lng },
+              ne: { lat: bounds.getNorthEast().lat, lng: bounds.getNorthEast().lng },
+            };
+            lastSearchBounds.current = `${newBounds.sw.lat.toFixed(3)},${newBounds.sw.lng.toFixed(3)},${newBounds.ne.lat.toFixed(3)},${newBounds.ne.lng.toFixed(3)}`;
+            setShowSearchButton(false);
+          }
+        }
+      }, 1600);
+    }
+  }, [searchCenter, isLoaded]);
+
+  // Handle "Search this area" click
+  const handleSearchArea = useCallback(() => {
+    if (currentBounds && onSearchArea) {
+      onSearchArea(currentBounds);
+      lastSearchBounds.current = `${currentBounds.sw.lat.toFixed(3)},${currentBounds.sw.lng.toFixed(3)},${currentBounds.ne.lat.toFixed(3)},${currentBounds.ne.lng.toFixed(3)}`;
+      setShowSearchButton(false);
+    }
+  }, [currentBounds, onSearchArea]);
+
   // Geolocation
   const handleLocate = useCallback(() => {
     if (!navigator.geolocation) return;
@@ -212,6 +293,26 @@ export function PropertyMap({
   return (
     <div className={`relative w-full ${fullScreen ? 'h-full' : 'h-full'}`}>
       <div ref={mapContainer} className="w-full h-full" />
+
+      {/* Search This Area Button */}
+      <AnimatePresence>
+        {showSearchButton && onSearchArea && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="absolute top-4 left-1/2 -translate-x-1/2 z-20"
+          >
+            <button
+              onClick={handleSearchArea}
+              className="flex items-center gap-2 px-4 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-full shadow-lg font-medium text-sm transition-colors"
+            >
+              <RefreshCw size={16} />
+              Search this area
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Map Controls */}
       <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">

@@ -20,9 +20,13 @@ export interface Property {
   yearBuilt: number;
   lotSize: number;
   imageUrl?: string | null;
+  images?: string[] | null;
   listingUrl?: string | null;
+  googlePlaceId?: string | null;
+  googleRating?: number | null;
   source: string;
   lastUpdated: string;
+  distance?: number | null; // Distance from search point in miles
 }
 
 export interface PropertyFilters {

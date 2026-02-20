@@ -1,8 +1,14 @@
 'use client';
 
 import { Property, formatPrice, getUpsideColor, getUpsideBgColor } from '@/types/property';
-import { MapPin, TrendingUp, Building2, ExternalLink, Heart } from 'lucide-react';
+import { MapPin, TrendingUp, Building2, ExternalLink, Heart, Navigation } from 'lucide-react';
 import { motion } from 'framer-motion';
+
+function formatDistance(miles: number): string {
+  if (miles < 0.1) return '<0.1 mi';
+  if (miles < 10) return `${miles.toFixed(1)} mi`;
+  return `${Math.round(miles)} mi`;
+}
 
 interface PropertyCardProps {
   property: Property;
@@ -32,16 +38,23 @@ export function PropertyCard({
       }`}
       onClick={onClick}
     >
-      {/* Image placeholder with upside score badge */}
-      <div className="relative h-32 bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center">
+      {/* Image with fallback */}
+      <div className="relative h-32 bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center overflow-hidden">
         {property.imageUrl ? (
           <img
             src={property.imageUrl}
             alt={property.name}
             className="w-full h-full object-cover"
+            onError={(e) => {
+              // Hide broken images
+              (e.target as HTMLImageElement).style.display = 'none';
+            }}
           />
         ) : (
-          <Building2 className="w-12 h-12 text-zinc-700" />
+          <div className="w-full h-full flex flex-col items-center justify-center">
+            <Building2 className="w-10 h-10 text-zinc-700 mb-1" />
+            <span className="text-xs text-zinc-600">No image</span>
+          </div>
         )}
         
         {/* Upside Score Badge */}
@@ -80,11 +93,19 @@ export function PropertyCard({
         <h3 className="font-semibold text-white text-base line-clamp-1">
           {property.name}
         </h3>
-        <div className="flex items-center gap-1.5 text-zinc-400 text-sm mt-1">
-          <MapPin size={14} />
-          <span className="line-clamp-1">
-            {property.city}, {property.state}
-          </span>
+        <div className="flex items-center justify-between mt-1">
+          <div className="flex items-center gap-1.5 text-zinc-400 text-sm">
+            <MapPin size={14} />
+            <span className="line-clamp-1">
+              {property.city}, {property.state}
+            </span>
+          </div>
+          {property.distance !== undefined && property.distance !== null && (
+            <div className="flex items-center gap-1 text-blue-400 text-xs">
+              <Navigation size={12} />
+              <span>{formatDistance(property.distance)}</span>
+            </div>
+          )}
         </div>
 
         {/* Key Metrics */}

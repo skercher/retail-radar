@@ -8,15 +8,14 @@ import { BottomNav } from '@/components/BottomNav';
 import { FilterSheet } from '@/components/FilterSheet';
 import { PropertyDrawer } from '@/components/PropertyDrawer';
 import {
-  Search,
   TrendingUp,
   Building2,
   Zap,
   SlidersHorizontal,
   Download,
   RefreshCw,
-  X,
 } from 'lucide-react';
+import { LocationSearch } from '@/components/LocationSearch';
 
 // Dynamic import for map to avoid SSR issues
 const PropertyMap = dynamic(
@@ -42,9 +41,15 @@ export default function Home() {
   const [savedProperties, setSavedProperties] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const [searchLocation, setSearchLocation] = useState<{
+    name: string;
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const [searchRadius, setSearchRadius] = useState<number>(25); // miles
 
   // Fetch properties from API
-  const fetchProperties = useCallback(async () => {
+  const fetchProperties = useCallback(async (bounds?: { sw: { lat: number; lng: number }; ne: { lat: number; lng: number } }) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -55,6 +60,18 @@ export default function Home() {
       if (filters.minPrice) params.set('minPrice', String(filters.minPrice));
       if (filters.maxPrice) params.set('maxPrice', String(filters.maxPrice));
       params.set('sortBy', sortBy === 'upsideScore' ? 'upside_score' : sortBy === 'capRate' ? 'cap_rate' : sortBy);
+
+      // Add location-based search params
+      if (searchLocation) {
+        params.set('lat', String(searchLocation.lat));
+        params.set('lng', String(searchLocation.lng));
+        params.set('radius', String(searchRadius));
+      }
+
+      // Add bounds filter if provided (for "Search this area")
+      if (bounds) {
+        params.set('bounds', `${bounds.sw.lat},${bounds.sw.lng},${bounds.ne.lat},${bounds.ne.lng}`);
+      }
 
       const response = await fetch(`/api/properties?${params.toString()}`);
       const data = await response.json();
@@ -74,7 +91,7 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [filters, sortBy]);
+  }, [filters, sortBy, searchLocation, searchRadius]);
 
   useEffect(() => {
     fetchProperties();
@@ -83,18 +100,6 @@ export default function Home() {
   // Filter and sort properties client-side
   const filteredProperties = useMemo(() => {
     let result = [...properties];
-
-    // Search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      result = result.filter(
-        (p) =>
-          p.name.toLowerCase().includes(query) ||
-          p.city.toLowerCase().includes(query) ||
-          p.state.toLowerCase().includes(query) ||
-          p.address.toLowerCase().includes(query)
-      );
-    }
 
     // Sort (for client-side filtering)
     result.sort((a, b) => {
@@ -112,8 +117,14 @@ export default function Home() {
       }
     });
 
+    // If we have location search, sort by distance optionally
+    if (searchLocation && result.some(p => p.distance !== undefined)) {
+      // Already sorted by the selected criteria, but put closest properties
+      // with similar scores first
+    }
+
     return result;
-  }, [properties, searchQuery, sortBy]);
+  }, [properties, sortBy, searchLocation]);
 
   // Stats
   const stats = useMemo(() => {
@@ -195,7 +206,7 @@ export default function Home() {
 
             {/* Refresh */}
             <button
-              onClick={fetchProperties}
+              onClick={() => fetchProperties()}
               className={`w-10 h-10 flex items-center justify-center bg-zinc-800 rounded-xl text-zinc-300 hover:bg-zinc-700 ${
                 loading ? 'animate-spin' : ''
               }`}
@@ -207,27 +218,34 @@ export default function Home() {
 
         {/* Search Row */}
         <div className="flex gap-2">
-          <div className="flex-1 relative">
-            <Search
-              size={18}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
+          <div className="flex-1">
+            <LocationSearch
+              onLocationSelect={(location) => {
+                setSearchLocation(location);
+                setSearchQuery(location.name);
+              }}
+              onClear={() => {
+                setSearchLocation(null);
+                setSearchQuery('');
+              }}
+              placeholder="Search location..."
             />
-            <input
-              type="text"
-              placeholder="Search properties, cities..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-zinc-800/80 border border-zinc-700 rounded-xl pl-10 pr-10 py-3 text-sm focus:outline-none focus:border-blue-500 placeholder:text-zinc-500"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"
-              >
-                <X size={16} />
-              </button>
-            )}
           </div>
+
+          {/* Radius selector (shown when location is selected) */}
+          {searchLocation && (
+            <select
+              value={searchRadius}
+              onChange={(e) => setSearchRadius(Number(e.target.value))}
+              className="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-3 text-sm text-white focus:outline-none focus:border-blue-500"
+            >
+              <option value={5}>5 mi</option>
+              <option value={10}>10 mi</option>
+              <option value={25}>25 mi</option>
+              <option value={50}>50 mi</option>
+              <option value={100}>100 mi</option>
+            </select>
+          )}
 
           {/* Filter Button */}
           <button
@@ -344,6 +362,8 @@ export default function Home() {
             properties={filteredProperties}
             selectedProperty={selectedProperty}
             onPropertySelect={setSelectedProperty}
+            searchCenter={searchLocation}
+            onSearchArea={(bounds) => fetchProperties(bounds)}
             fullScreen={viewMode === 'map'}
           />
         </div>

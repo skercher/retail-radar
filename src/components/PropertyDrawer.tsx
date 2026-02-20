@@ -79,15 +79,21 @@ export function PropertyDrawer({
             </div>
 
             {/* Header Image */}
-            <div className="relative h-48 bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center">
+            <div className="relative h-48 bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center overflow-hidden">
               {property.imageUrl ? (
                 <img
                   src={property.imageUrl}
                   alt={property.name}
                   className="w-full h-full object-cover"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
                 />
               ) : (
-                <Building2 className="w-16 h-16 text-zinc-700" />
+                <div className="w-full h-full flex flex-col items-center justify-center">
+                  <Building2 className="w-16 h-16 text-zinc-700 mb-2" />
+                  <span className="text-sm text-zinc-600">No image available</span>
+                </div>
               )}
 
               {/* Close button */}
@@ -107,9 +113,16 @@ export function PropertyDrawer({
                 {property.upsideScore}
               </div>
 
-              {/* Source */}
-              <div className="absolute bottom-4 right-4 px-2 py-1 bg-black/60 rounded text-xs text-zinc-300">
-                {property.source}
+              {/* Source + Rating */}
+              <div className="absolute bottom-4 right-4 flex items-center gap-2">
+                {property.googleRating && (
+                  <div className="px-2 py-1 bg-black/60 rounded text-xs text-yellow-400 flex items-center gap-1">
+                    ★ {property.googleRating.toFixed(1)}
+                  </div>
+                )}
+                <div className="px-2 py-1 bg-black/60 rounded text-xs text-zinc-300">
+                  {property.source}
+                </div>
               </div>
             </div>
 
