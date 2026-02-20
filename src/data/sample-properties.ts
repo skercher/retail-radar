@@ -1,7 +1,7 @@
 import { Property } from '@/types/property';
 
-// Sample data to demonstrate the dashboard
-// In production, this will come from scraped sources
+// Sample data for initial display
+// In production, data comes from scraped sources via the API
 export const sampleProperties: Property[] = [
   {
     id: '1',
@@ -11,7 +11,7 @@ export const sampleProperties: Property[] = [
     state: 'AZ',
     zip: '85001',
     latitude: 33.4484,
-    longitude: -112.0740,
+    longitude: -112.074,
     price: 4500000,
     sqft: 32000,
     pricePerSqft: 140.63,
@@ -34,7 +34,7 @@ export const sampleProperties: Property[] = [
     state: 'TX',
     zip: '75201',
     latitude: 32.7767,
-    longitude: -96.7970,
+    longitude: -96.797,
     price: 8200000,
     sqft: 48000,
     pricePerSqft: 170.83,
@@ -106,7 +106,7 @@ export const sampleProperties: Property[] = [
     longitude: -84.3731,
     price: 2100000,
     sqft: 12000,
-    pricePerSqft: 175.00,
+    pricePerSqft: 175.0,
     capRate: 9.1,
     vacancyRate: 35,
     marketVacancyRate: 9,
@@ -129,7 +129,7 @@ export const sampleProperties: Property[] = [
     longitude: -87.6298,
     price: 6800000,
     sqft: 42000,
-    pricePerSqft: 161.90,
+    pricePerSqft: 161.9,
     capRate: 7.2,
     vacancyRate: 18,
     marketVacancyRate: 10,

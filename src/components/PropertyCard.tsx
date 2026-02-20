@@ -1,71 +1,143 @@
 'use client';
 
-import { Property } from '@/types/property';
-import { Building2, MapPin, TrendingUp, Percent, DollarSign } from 'lucide-react';
+import { Property, formatPrice, getUpsideColor, getUpsideBgColor } from '@/types/property';
+import { MapPin, TrendingUp, Building2, ExternalLink, Heart } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 interface PropertyCardProps {
   property: Property;
   isSelected?: boolean;
+  isSaved?: boolean;
   onClick?: () => void;
+  onSave?: () => void;
+  compact?: boolean;
 }
 
-export function PropertyCard({ property, isSelected, onClick }: PropertyCardProps) {
-  const getUpsideColor = (score: number) => {
-    if (score >= 75) return 'text-green-500 bg-green-500/10';
-    if (score >= 50) return 'text-yellow-500 bg-yellow-500/10';
-    return 'text-gray-400 bg-gray-400/10';
-  };
-
-  const formatPrice = (price: number) => {
-    if (price >= 1000000) {
-      return `$${(price / 1000000).toFixed(1)}M`;
-    }
-    return `$${(price / 1000).toFixed(0)}K`;
-  };
-
+export function PropertyCard({
+  property,
+  isSelected,
+  isSaved,
+  onClick,
+  onSave,
+  compact = false,
+}: PropertyCardProps) {
   return (
-    <div
-      className={`bg-zinc-900 border rounded-lg p-4 cursor-pointer transition-all hover:border-blue-500 ${
-        isSelected ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-zinc-700'
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`bg-zinc-900 border rounded-2xl overflow-hidden cursor-pointer transition-all active:scale-[0.98] ${
+        isSelected
+          ? 'border-blue-500 ring-2 ring-blue-500/20'
+          : 'border-zinc-800 hover:border-zinc-700'
       }`}
       onClick={onClick}
     >
-      <div className="flex justify-between items-start mb-3">
-        <div>
-          <h3 className="font-semibold text-white text-sm">{property.name}</h3>
-          <div className="flex items-center gap-1 text-zinc-400 text-xs mt-1">
-            <MapPin size={12} />
-            {property.city}, {property.state}
-          </div>
-        </div>
-        <div className={`px-2 py-1 rounded-full text-xs font-bold ${getUpsideColor(property.upsideScore)}`}>
+      {/* Image placeholder with upside score badge */}
+      <div className="relative h-32 bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center">
+        {property.imageUrl ? (
+          <img
+            src={property.imageUrl}
+            alt={property.name}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <Building2 className="w-12 h-12 text-zinc-700" />
+        )}
+        
+        {/* Upside Score Badge */}
+        <div
+          className={`absolute top-3 left-3 px-2.5 py-1 rounded-full text-sm font-bold text-white shadow-lg ${getUpsideBgColor(
+            property.upsideScore
+          )}`}
+        >
           {property.upsideScore}
         </div>
+
+        {/* Save Button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onSave?.();
+          }}
+          className={`absolute top-3 right-3 w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
+            isSaved
+              ? 'bg-red-500 text-white'
+              : 'bg-black/50 text-white hover:bg-black/70'
+          }`}
+        >
+          <Heart size={20} fill={isSaved ? 'currentColor' : 'none'} />
+        </button>
+
+        {/* Source Badge */}
+        <div className="absolute bottom-3 right-3 px-2 py-0.5 bg-black/60 rounded text-xs text-zinc-300">
+          {property.source}
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 text-xs">
-        <div className="flex items-center gap-2 text-zinc-300">
-          <DollarSign size={14} className="text-zinc-500" />
-          <span>{formatPrice(property.price)}</span>
+      {/* Content */}
+      <div className="p-4">
+        {/* Title & Location */}
+        <h3 className="font-semibold text-white text-base line-clamp-1">
+          {property.name}
+        </h3>
+        <div className="flex items-center gap-1.5 text-zinc-400 text-sm mt-1">
+          <MapPin size={14} />
+          <span className="line-clamp-1">
+            {property.city}, {property.state}
+          </span>
         </div>
-        <div className="flex items-center gap-2 text-zinc-300">
-          <TrendingUp size={14} className="text-zinc-500" />
-          <span>{property.capRate.toFixed(1)}% Cap</span>
-        </div>
-        <div className="flex items-center gap-2 text-zinc-300">
-          <Building2 size={14} className="text-zinc-500" />
-          <span>{property.sqft.toLocaleString()} SF</span>
-        </div>
-        <div className="flex items-center gap-2 text-zinc-300">
-          <Percent size={14} className="text-zinc-500" />
-          <span>{property.vacancyRate}% Vacant</span>
-        </div>
-      </div>
 
-      <div className="mt-3 pt-3 border-t border-zinc-800 flex justify-between items-center text-xs">
-        <span className="text-zinc-500 capitalize">{property.propertyType.replace('-', ' ')}</span>
-        <span className="text-zinc-600">{property.source}</span>
+        {/* Key Metrics */}
+        <div className="grid grid-cols-2 gap-3 mt-4">
+          <div className="bg-zinc-800/50 rounded-xl p-3 text-center">
+            <div className="text-lg font-bold text-white">
+              {formatPrice(property.price)}
+            </div>
+            <div className="text-xs text-zinc-500">Price</div>
+          </div>
+          <div className="bg-zinc-800/50 rounded-xl p-3 text-center">
+            <div className={`text-lg font-bold ${getUpsideColor(property.upsideScore)}`}>
+              {property.capRate.toFixed(1)}%
+            </div>
+            <div className="text-xs text-zinc-500">Cap Rate</div>
+          </div>
+        </div>
+
+        {!compact && (
+          <>
+            {/* Secondary Metrics */}
+            <div className="flex justify-between items-center mt-4 text-sm">
+              <div className="flex items-center gap-2 text-zinc-300">
+                <Building2 size={16} className="text-zinc-500" />
+                <span>{property.sqft.toLocaleString()} SF</span>
+              </div>
+              <div className="flex items-center gap-2 text-zinc-300">
+                <TrendingUp size={16} className="text-zinc-500" />
+                <span>{property.vacancyRate}% Vacant</span>
+              </div>
+            </div>
+
+            {/* Property Type & View Listing */}
+            <div className="flex justify-between items-center mt-4 pt-4 border-t border-zinc-800">
+              <span className="text-xs text-zinc-500 capitalize">
+                {property.propertyType.replace('-', ' ')}
+              </span>
+              {property.listingUrl && (
+                <a
+                  href={property.listingUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex items-center gap-1 text-blue-400 text-sm hover:text-blue-300"
+                >
+                  View Listing
+                  <ExternalLink size={14} />
+                </a>
+              )}
+            </div>
+          </>
+        )}
       </div>
-    </div>
+    </motion.div>
   );
 }

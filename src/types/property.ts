@@ -1,5 +1,6 @@
 export interface Property {
   id: string;
+  externalId?: string | null;
   name: string;
   address: string;
   city: string;
@@ -12,14 +13,14 @@ export interface Property {
   pricePerSqft: number;
   capRate: number;
   vacancyRate: number;
-  marketVacancyRate: number;
-  upsideScore: number; // 0-100, higher = more opportunity
+  marketVacancyRate?: number;
+  upsideScore: number;
   tenantCount: number;
-  propertyType: 'strip-center' | 'standalone' | 'mall' | 'mixed-use';
+  propertyType: 'strip-center' | 'standalone' | 'mall' | 'mixed-use' | string;
   yearBuilt: number;
   lotSize: number;
-  imageUrl?: string;
-  listingUrl?: string;
+  imageUrl?: string | null;
+  listingUrl?: string | null;
   source: string;
   lastUpdated: string;
 }
@@ -34,6 +35,7 @@ export interface PropertyFilters {
   minUpsideScore?: number;
   propertyTypes?: Property['propertyType'][];
   states?: string[];
+  search?: string;
 }
 
 export interface MapViewport {
@@ -42,20 +44,29 @@ export interface MapViewport {
   zoom: number;
 }
 
+export interface MapBounds {
+  sw: { lat: number; lng: number };
+  ne: { lat: number; lng: number };
+}
+
+export type ViewMode = 'list' | 'map' | 'split';
+export type SortOption = 'upsideScore' | 'price' | 'capRate' | 'vacancy';
+
 export function calculateUpsideScore(property: Partial<Property>): number {
-  // Vacancy upside: if property vacancy > market vacancy = less upside
-  // If property vacancy < market vacancy but still has some vacancy = upside
-  const vacancyDelta = (property.marketVacancyRate || 10) - (property.vacancyRate || 0);
+  const marketVacancy = property.marketVacancyRate || 10;
+  const propVacancy = property.vacancyRate || 0;
+  const vacancyDelta = marketVacancy - propVacancy;
   
-  // Sweet spot: 10-30% vacancy with market at lower rate
   let score = 50;
   
-  if (property.vacancyRate && property.vacancyRate > 5 && property.vacancyRate < 40) {
-    score += 20; // Has vacancy to fill
+  // Has vacancy to fill (sweet spot: 10-30%)
+  if (propVacancy && propVacancy > 5 && propVacancy < 40) {
+    score += 20;
   }
   
+  // Property beats market
   if (vacancyDelta > 0) {
-    score += Math.min(vacancyDelta * 2, 20); // Property beats market
+    score += Math.min(vacancyDelta * 2, 20);
   }
   
   // Cap rate bonus
@@ -63,10 +74,32 @@ export function calculateUpsideScore(property: Partial<Property>): number {
     score += Math.min((property.capRate - 7) * 5, 15);
   }
   
-  // Price per sqft value
+  // Value play on price per sqft
   if (property.pricePerSqft && property.pricePerSqft < 150) {
     score += 10;
   }
   
   return Math.min(Math.max(score, 0), 100);
+}
+
+export function formatPrice(price: number): string {
+  if (price >= 1_000_000) {
+    return `$${(price / 1_000_000).toFixed(1)}M`;
+  }
+  if (price >= 1_000) {
+    return `$${(price / 1_000).toFixed(0)}K`;
+  }
+  return `$${price}`;
+}
+
+export function getUpsideColor(score: number): string {
+  if (score >= 75) return 'text-emerald-500';
+  if (score >= 50) return 'text-amber-500';
+  return 'text-zinc-400';
+}
+
+export function getUpsideBgColor(score: number): string {
+  if (score >= 75) return 'bg-emerald-500';
+  if (score >= 50) return 'bg-amber-500';
+  return 'bg-zinc-500';
 }

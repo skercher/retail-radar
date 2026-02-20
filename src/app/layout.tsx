@@ -1,22 +1,41 @@
-import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
-const inter = Inter({ subsets: ['latin'] });
-
 export const metadata: Metadata = {
-  title: 'RetailRadar - Find Retail CRE with Vacancy Upside',
-  description: 'Discover retail commercial real estate opportunities with vacancy upside potential across the United States.',
+  title: 'RetailRadar - Find High-Upside Retail Properties',
+  description: 'Discover undervalued retail properties with high vacancy upside potential. AI-powered analysis of commercial real estate opportunities.',
+  keywords: 'retail property, commercial real estate, CRE, strip centers, vacancy, investment',
+  openGraph: {
+    title: 'RetailRadar',
+    description: 'Find high-upside retail properties',
+    type: 'website',
+  },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: 'cover',
+  themeColor: '#09090b',
 };
 
 export default function RootLayout({
   children,
-}: {
+}: Readonly<{
   children: React.ReactNode;
-}) {
+}>) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${inter.className} antialiased`}>{children}</body>
+    <html lang="en">
+      <head>
+        <link rel="preconnect" href="https://api.mapbox.com" />
+        <link
+          href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css"
+          rel="stylesheet"
+        />
+      </head>
+      <body className="antialiased overflow-hidden">{children}</body>
     </html>
   );
 }
