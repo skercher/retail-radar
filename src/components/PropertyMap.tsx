@@ -11,6 +11,7 @@ import {
 import { Property } from '@/types/property';
 import { Locate, Plus, Minus, Layers, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { GOOGLE_MAPS_API_KEY, GOOGLE_MAPS_LIBRARIES } from '@/lib/google-maps';
 
 interface PropertyMapProps {
   properties: Property[];
@@ -21,8 +22,6 @@ interface PropertyMapProps {
   searchCenter?: { lat: number; lng: number } | null;
   fullScreen?: boolean;
 }
-
-const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
 // Dark mode map style
 const darkMapStyle = [
@@ -151,7 +150,7 @@ export function PropertyMap({
 
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
-    libraries: ['places'],
+    libraries: GOOGLE_MAPS_LIBRARIES,
   });
 
   const mapOptions = useMemo<google.maps.MapOptions>(() => ({
@@ -342,12 +341,12 @@ export function PropertyMap({
                     position={{ lat: property.latitude, lng: property.longitude }}
                     clusterer={clusterer}
                     icon={{
-                      url: createMarkerSvg(property.upsideScore, isSelected),
+                      url: createMarkerSvg(property.upsideScore ?? 0, isSelected),
                       scaledSize: new google.maps.Size(isSelected ? 48 : 40, isSelected ? 48 : 40),
                       anchor: new google.maps.Point(isSelected ? 24 : 20, isSelected ? 24 : 20),
                     }}
                     onClick={() => handleMarkerClick(property)}
-                    zIndex={isSelected ? 1000 : property.upsideScore}
+                    zIndex={isSelected ? 1000 : (property.upsideScore ?? 0)}
                   />
                 );
               })}

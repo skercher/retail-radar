@@ -60,10 +60,10 @@ export function PropertyCard({
         {/* Upside Score Badge */}
         <div
           className={`absolute top-3 left-3 px-2.5 py-1 rounded-full text-sm font-bold text-white shadow-lg ${getUpsideBgColor(
-            property.upsideScore
+            property.upsideScore ?? 0
           )}`}
         >
-          {property.upsideScore}
+          {property.upsideScore ?? 0}
         </div>
 
         {/* Save Button */}
@@ -117,8 +117,8 @@ export function PropertyCard({
             <div className="text-xs text-zinc-500">Price</div>
           </div>
           <div className="bg-zinc-800/50 rounded-xl p-3 text-center">
-            <div className={`text-lg font-bold ${getUpsideColor(property.upsideScore)}`}>
-              {property.capRate.toFixed(1)}%
+            <div className={`text-lg font-bold ${getUpsideColor(property.upsideScore ?? 0)}`}>
+              {property.capRate != null ? `${property.capRate.toFixed(1)}%` : 'N/A'}
             </div>
             <div className="text-xs text-zinc-500">Cap Rate</div>
           </div>
@@ -130,11 +130,11 @@ export function PropertyCard({
             <div className="flex justify-between items-center mt-4 text-sm">
               <div className="flex items-center gap-2 text-zinc-300">
                 <Building2 size={16} className="text-zinc-500" />
-                <span>{property.sqft.toLocaleString()} SF</span>
+                <span>{property.sqft != null ? `${property.sqft.toLocaleString()} SF` : 'N/A'}</span>
               </div>
               <div className="flex items-center gap-2 text-zinc-300">
                 <TrendingUp size={16} className="text-zinc-500" />
-                <span>{property.vacancyRate}% Vacant</span>
+                <span>{property.vacancyRate != null ? `${property.vacancyRate}% Vacant` : 'N/A'}</span>
               </div>
             </div>
 
