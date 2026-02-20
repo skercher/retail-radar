@@ -86,14 +86,17 @@ export function calculateUpsideScore(property: Partial<Property>): number {
   return Math.min(Math.max(score, 0), 100);
 }
 
-export function formatPrice(price: number): string {
+export function formatPrice(price: number | null | undefined): string {
+  if (price == null || price === 0 || isNaN(price)) {
+    return 'N/A';
+  }
   if (price >= 1_000_000) {
     return `$${(price / 1_000_000).toFixed(1)}M`;
   }
   if (price >= 1_000) {
     return `$${(price / 1_000).toFixed(0)}K`;
   }
-  return `$${price}`;
+  return `$${price.toLocaleString()}`;
 }
 
 export function getUpsideColor(score: number): string {

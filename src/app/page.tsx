@@ -48,34 +48,11 @@ export default function Home() {
   } | null>(null);
   const [searchRadius, setSearchRadius] = useState<number>(25); // miles
 
-  // Fetch properties from API - prioritize Google Places for real data
+  // Fetch properties from API - database listings first, Google Places as fallback
   const fetchProperties = useCallback(async (bounds?: { sw: { lat: number; lng: number }; ne: { lat: number; lng: number } }) => {
     setLoading(true);
     try {
-      // If we have a search location, fetch REAL data from Google Places
-      if (searchLocation) {
-        const radiusMeters = searchRadius * 1609; // Convert miles to meters
-        const placesUrl = `/api/places?lat=${searchLocation.lat}&lng=${searchLocation.lng}&radius=${radiusMeters}`;
-        const placesResponse = await fetch(placesUrl);
-        const placesData = await placesResponse.json();
-        
-        if (placesData.properties && placesData.properties.length > 0) {
-          // Calculate distance from search location
-          const withDistance = placesData.properties.map((p: Property) => ({
-            ...p,
-            distance: calculateDistance(
-              searchLocation.lat, 
-              searchLocation.lng, 
-              p.latitude, 
-              p.longitude
-            )
-          }));
-          setProperties(withDistance);
-          return;
-        }
-      }
-
-      // Fallback to database properties
+      // Build query params for database search
       const params = new URLSearchParams();
       if (filters.minUpsideScore) params.set('minUpside', String(filters.minUpsideScore));
       if (filters.minCapRate) params.set('minCapRate', String(filters.minCapRate));
@@ -95,19 +72,48 @@ export default function Home() {
         params.set('bounds', `${bounds.sw.lat},${bounds.sw.lng},${bounds.ne.lat},${bounds.ne.lng}`);
       }
 
+      // Always try database first - this has REAL listing data
       const response = await fetch(`/api/properties?${params.toString()}`);
       const data = await response.json();
       
       if (data.properties && data.properties.length > 0) {
         setProperties(data.properties);
-      } else {
-        const { sampleProperties } = await import('@/data/sample-properties');
-        setProperties(sampleProperties);
+        return;
       }
+
+      // No database results - fall back to Google Places (retail discovery, no listing data)
+      if (searchLocation) {
+        const radiusMeters = Math.min(searchRadius * 1609, 50000); // Max 50km for Places API
+        const placesUrl = `/api/places?lat=${searchLocation.lat}&lng=${searchLocation.lng}&radius=${radiusMeters}`;
+        const placesResponse = await fetch(placesUrl);
+        const placesData = await placesResponse.json();
+        
+        if (placesData.properties && placesData.properties.length > 0) {
+          // Calculate distance and mark as "discovery" data (no listing info)
+          const withDistance = placesData.properties.map((p: Property) => ({
+            ...p,
+            distance: calculateDistance(
+              searchLocation.lat, 
+              searchLocation.lng, 
+              p.latitude, 
+              p.longitude
+            ),
+            // Clear out fake financial data - these are just retail locations, not listings
+            price: null,
+            capRate: null,
+            sqft: null,
+            vacancyRate: null,
+          }));
+          setProperties(withDistance);
+          return;
+        }
+      }
+
+      // No results anywhere - show empty state
+      setProperties([]);
     } catch (error) {
       console.error('Failed to fetch properties:', error);
-      const { sampleProperties } = await import('@/data/sample-properties');
-      setProperties(sampleProperties);
+      setProperties([]);
     } finally {
       setLoading(false);
     }
@@ -158,13 +164,14 @@ export default function Home() {
     return result;
   }, [properties, sortBy, searchLocation]);
 
-  // Stats
+  // Stats - handle null values properly
   const stats = useMemo(() => {
-    const highUpside = filteredProperties.filter((p) => p.upsideScore >= 75).length;
-    const avgCapRate =
-      filteredProperties.reduce((sum, p) => sum + p.capRate, 0) /
-        filteredProperties.length || 0;
-    const totalValue = filteredProperties.reduce((sum, p) => sum + p.price, 0);
+    const highUpside = filteredProperties.filter((p) => (p.upsideScore ?? 0) >= 75).length;
+    const propertiesWithCapRate = filteredProperties.filter(p => p.capRate != null && p.capRate > 0);
+    const avgCapRate = propertiesWithCapRate.length > 0
+      ? propertiesWithCapRate.reduce((sum, p) => sum + (p.capRate || 0), 0) / propertiesWithCapRate.length
+      : 0;
+    const totalValue = filteredProperties.reduce((sum, p) => sum + (p.price || 0), 0);
 
     return { highUpside, avgCapRate, totalValue, count: filteredProperties.length };
   }, [filteredProperties]);

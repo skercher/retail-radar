@@ -82,8 +82,12 @@ export function PropertyCard({
         </button>
 
         {/* Source Badge */}
-        <div className="absolute bottom-3 right-3 px-2 py-0.5 bg-black/60 rounded text-xs text-zinc-300">
-          {property.source}
+        <div className={`absolute bottom-3 right-3 px-2 py-0.5 rounded text-xs ${
+          property.source === 'GooglePlaces' 
+            ? 'bg-blue-500/80 text-white' 
+            : 'bg-black/60 text-zinc-300'
+        }`}>
+          {property.source === 'GooglePlaces' ? 'Retail Location' : property.source}
         </div>
       </div>
 
@@ -108,21 +112,34 @@ export function PropertyCard({
           )}
         </div>
 
-        {/* Key Metrics */}
-        <div className="grid grid-cols-2 gap-3 mt-4">
-          <div className="bg-zinc-800/50 rounded-xl p-3 text-center">
-            <div className="text-lg font-bold text-white">
-              {formatPrice(property.price)}
+        {/* Key Metrics - only show if we have listing data */}
+        {(property.price != null && property.price > 0) || (property.capRate != null && property.capRate > 0) ? (
+          <div className="grid grid-cols-2 gap-3 mt-4">
+            <div className="bg-zinc-800/50 rounded-xl p-3 text-center">
+              <div className="text-lg font-bold text-white">
+                {formatPrice(property.price)}
+              </div>
+              <div className="text-xs text-zinc-500">Price</div>
             </div>
-            <div className="text-xs text-zinc-500">Price</div>
-          </div>
-          <div className="bg-zinc-800/50 rounded-xl p-3 text-center">
-            <div className={`text-lg font-bold ${getUpsideColor(property.upsideScore ?? 0)}`}>
-              {property.capRate != null ? `${property.capRate.toFixed(1)}%` : 'N/A'}
+            <div className="bg-zinc-800/50 rounded-xl p-3 text-center">
+              <div className={`text-lg font-bold ${getUpsideColor(property.upsideScore ?? 0)}`}>
+                {property.capRate != null && property.capRate > 0 ? `${property.capRate.toFixed(1)}%` : 'N/A'}
+              </div>
+              <div className="text-xs text-zinc-500">Cap Rate</div>
             </div>
-            <div className="text-xs text-zinc-500">Cap Rate</div>
           </div>
-        </div>
+        ) : (
+          <div className="mt-4 bg-zinc-800/50 rounded-xl p-3 text-center">
+            <div className="text-sm text-zinc-400">
+              {property.source === 'GooglePlaces' ? 'Retail location - no listing data' : 'Contact for pricing'}
+            </div>
+            {property.googleRating && (
+              <div className="text-xs text-zinc-500 mt-1">
+                ⭐ {property.googleRating.toFixed(1)} Google Rating
+              </div>
+            )}
+          </div>
+        )}
 
         {!compact && (
           <>
