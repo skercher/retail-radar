@@ -39,7 +39,7 @@ export default function Home() {
   const [sortBy, setSortBy] = useState<SortOption>('upsideScore');
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [savedProperties, setSavedProperties] = useState<Set<string>>(new Set());
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [viewMode, setViewMode] = useState<ViewMode>('map');
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [searchLocation, setSearchLocation] = useState<{
     name: string;
@@ -223,6 +223,7 @@ export default function Home() {
               onLocationSelect={(location) => {
                 setSearchLocation(location);
                 setSearchQuery(location.name);
+                setViewMode('map'); // Auto-switch to map when location selected
               }}
               onClear={() => {
                 setSearchLocation(null);
