@@ -48,10 +48,34 @@ export default function Home() {
   } | null>(null);
   const [searchRadius, setSearchRadius] = useState<number>(25); // miles
 
-  // Fetch properties from API
+  // Fetch properties from API - prioritize Google Places for real data
   const fetchProperties = useCallback(async (bounds?: { sw: { lat: number; lng: number }; ne: { lat: number; lng: number } }) => {
     setLoading(true);
     try {
+      // If we have a search location, fetch REAL data from Google Places
+      if (searchLocation) {
+        const radiusMeters = searchRadius * 1609; // Convert miles to meters
+        const placesUrl = `/api/places?lat=${searchLocation.lat}&lng=${searchLocation.lng}&radius=${radiusMeters}`;
+        const placesResponse = await fetch(placesUrl);
+        const placesData = await placesResponse.json();
+        
+        if (placesData.properties && placesData.properties.length > 0) {
+          // Calculate distance from search location
+          const withDistance = placesData.properties.map((p: Property) => ({
+            ...p,
+            distance: calculateDistance(
+              searchLocation.lat, 
+              searchLocation.lng, 
+              p.latitude, 
+              p.longitude
+            )
+          }));
+          setProperties(withDistance);
+          return;
+        }
+      }
+
+      // Fallback to database properties
       const params = new URLSearchParams();
       if (filters.minUpsideScore) params.set('minUpside', String(filters.minUpsideScore));
       if (filters.minCapRate) params.set('minCapRate', String(filters.minCapRate));
@@ -61,14 +85,12 @@ export default function Home() {
       if (filters.maxPrice) params.set('maxPrice', String(filters.maxPrice));
       params.set('sortBy', sortBy === 'upsideScore' ? 'upside_score' : sortBy === 'capRate' ? 'cap_rate' : sortBy);
 
-      // Add location-based search params
       if (searchLocation) {
         params.set('lat', String(searchLocation.lat));
         params.set('lng', String(searchLocation.lng));
         params.set('radius', String(searchRadius));
       }
 
-      // Add bounds filter if provided (for "Search this area")
       if (bounds) {
         params.set('bounds', `${bounds.sw.lat},${bounds.sw.lng},${bounds.ne.lat},${bounds.ne.lng}`);
       }
@@ -79,19 +101,29 @@ export default function Home() {
       if (data.properties && data.properties.length > 0) {
         setProperties(data.properties);
       } else {
-        // Fall back to sample data if no DB data
         const { sampleProperties } = await import('@/data/sample-properties');
         setProperties(sampleProperties);
       }
     } catch (error) {
       console.error('Failed to fetch properties:', error);
-      // Fall back to sample data
       const { sampleProperties } = await import('@/data/sample-properties');
       setProperties(sampleProperties);
     } finally {
       setLoading(false);
     }
   }, [filters, sortBy, searchLocation, searchRadius]);
+
+  // Calculate distance between two points in miles
+  function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 3959; // Earth's radius in miles
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return Math.round(R * c * 10) / 10; // Round to 1 decimal
+  }
 
   useEffect(() => {
     fetchProperties();
