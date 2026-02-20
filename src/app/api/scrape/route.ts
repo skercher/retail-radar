@@ -136,11 +136,11 @@ export async function POST(request: NextRequest) {
     // Insert properties into database
     let added = 0;
     for (const prop of scrapedProperties) {
-      const upsideScore = calculateUpsideScore({
+      const upsideScore = Math.round(calculateUpsideScore({
         vacancyRate: prop.vacancyRate,
         capRate: prop.capRate,
         pricePerSqft: prop.price / prop.sqft,
-      });
+      }));
 
       const result = await query(
         `INSERT INTO properties (
@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
           prop.propertyType,
           prop.yearBuilt,
           prop.lotSize,
-          Math.floor(Math.random() * 15) + 1, // tenant count
+          Math.floor(Math.random() * 15) + 1,
           prop.listingUrl,
           prop.imageUrl,
           prop.source,
